@@ -48,11 +48,7 @@ curl "http://localhost/?p=1%20UNION%20SELECT%20*%20FROM%20wp_users"
 ```
 
 **Результат:** AI-адаптер та вебдодаток NetVigil коректно ідентифікують загрозу як «SQL Injection» з risk_score 8-9 та генерують рекомендації щодо блокування IP-адреси.
-
-> [!NOTE]
-> **[МІСЦЕ ДЛЯ СКРІНШОТУ №4.2: Отримання сповіщення про загрозу в Telegram]**
-> *Скріншот має відображати: мобільний додаток або десктопну версію Telegram із вікном бота NetVigil, у якому відображається детальне сповіщення про виявлену SQL-ін'єкцію (типу [NetVigil AI — Network Threat Alert]) з описом та Mitigation Steps.*
-> *Очікуване ім'я файлу: `screenshot_telegram_alert.png`*
+![Отримання сповіщення про загрозу в Telegram](images/screenshot_telegram_alert.png)
 
 ### 4.3.2. Імітація Brute-force Attack
 

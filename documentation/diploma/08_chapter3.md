@@ -116,10 +116,7 @@ CSS побудований на змінних (CSS Custom Properties) для з
 }
 ```
 
-> [!NOTE]
-> **[МІСЦЕ ДЛЯ СКРІНШОТУ №3.1: Головна панель вебдодатку NetVigil (Dashboard)]**
-> *Скріншот має відображати: інтерфейс головного дашборду вебдодатку (NetVigil Dashboard) у темній темі з графіками Timeline (Requests/s, Errors/s), KPI-картками подій, круговими індикаторами RAM/Disk та загальним станом системи.*
-> *Очікуване ім'я файлу: `screenshot_dashboard.png`*
+![Головна панель вебдодатку NetVigil (Dashboard)](images/screenshot_dashboard.png)
 
 ## 3.4. Інтеграція з LLM (Ollama/Llama-3)
 
@@ -174,10 +171,7 @@ def _ollama_generate(prompt: str, format_json: bool = True):
 5. Опис відправляється до LLM для аналізу загроз;
 6. Результати повертаються у JSON-форматі та візуалізуються на Dashboard.
 
-> [!NOTE]
-> **[МІСЦЕ ДЛЯ СКРІНШОТУ №3.2: Модуль аналізу трафіку PCAP (Traffic Analysis)]**
-> *Скріншот має відображати: сторінку аналізу трафіку вебдодатку після завантаження PCAP-файлу: графік розподілу пакетів за протоколами, таблицю розібраних пакетів із заголовками та блок AI Security Report з виявленими LLM аномаліями.*
-> *Очікуване ім'я файлу: `screenshot_pcap_analysis.png`*
+![Модуль аналізу трафіку PCAP (Traffic Analysis)](images/screenshot_pcap_analysis.png)
 
 ### 3.5.3. Оптимізація продуктивності та сумісності парсера
 
@@ -222,10 +216,7 @@ pipeline {
 }
 ```
 
-> [!NOTE]
-> **[МІСЦЕ ДЛЯ СКРІНШОТУ №3.3: Пайплайн розгортання Jenkins (Stage View)]**
-> *Скріншот має відображати: інтерфейс Jenkins Pipeline Stage View, що показує успішне виконання всіх 5 стадій збірки та деплою проекту (зелені блоки).*
-> *Очікуване ім'я файлу: `screenshot_jenkins_pipeline.png`*
+![Пайплайн розгортання Jenkins (Stage View)](images/screenshot_jenkins_pipeline.png)
 
 ## 3.7. Метрики та моніторинг системи (Prometheus & Loki)
 

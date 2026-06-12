@@ -210,11 +210,12 @@ def convert_md_to_pdf(md_path, pdf_path):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         doc_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "documentation")
-        for filename in os.listdir(doc_dir):
-            if filename.endswith(".md"):
-                md_file = os.path.join(doc_dir, filename)
-                pdf_file = os.path.join(doc_dir, filename[:-3] + ".pdf")
-                convert_md_to_pdf(md_file, pdf_file)
+        for root, dirs, files in os.walk(doc_dir):
+            for filename in files:
+                if filename.endswith(".md"):
+                    md_file = os.path.join(root, filename)
+                    pdf_file = os.path.join(root, filename[:-3] + ".pdf")
+                    convert_md_to_pdf(md_file, pdf_file)
     else:
         src = sys.argv[1]
         if len(sys.argv) >= 3:

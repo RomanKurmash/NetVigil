@@ -74,11 +74,14 @@
     async function api(url, options = {}) {
         try {
             const resp = await fetch(url, options);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP ${resp.status}`);
+            }
             return await resp.json();
         } catch (e) {
             console.error(`API Error [${url}]:`, e);
-            return null;
+            return { error: e.message };
         }
     }
 
@@ -267,9 +270,9 @@
         btn.disabled = false;
         btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg> Analyze with AI';
 
-        if (!data || !data.analysis) {
+        if (!data || data.error || !data.analysis) {
             $('#log-analysis-card').style.display = 'block';
-            $('#log-analysis-content').innerHTML = '<p style="color:var(--accent-red)">Analysis failed. LLM may be unavailable.</p>';
+            $('#log-analysis-content').innerHTML = `<p style="color:var(--accent-red)">Analysis failed: ${data?.error || 'LLM may be unavailable.'}</p>`;
             return;
         }
 
@@ -346,8 +349,8 @@
         $('#upload-progress').style.display = 'none';
         $('#upload-zone').style.display = 'block';
 
-        if (!data) {
-            alert('PCAP analysis failed');
+        if (!data || data.error) {
+            alert(data ? `PCAP analysis failed: ${data.error}` : 'PCAP analysis failed: Server unreachable');
             return;
         }
 

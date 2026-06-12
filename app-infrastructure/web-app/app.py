@@ -130,10 +130,19 @@ def _parse_pcap_bytes(data: bytes):
 
     # Global header
     magic = struct.unpack("<I", data[:4])[0]
+    is_nanosecond = False
     if magic == 0xA1B2C3D4:
         endian = "<"
     elif magic == 0xD4C3B2A1:
         endian = ">"
+    elif magic == 0xA1B23C4D:
+        endian = "<"
+        is_nanosecond = True
+    elif magic == 0x4D3CB2A1:
+        endian = ">"
+        is_nanosecond = True
+    elif magic == 0x0A0D0D0A:
+        return "pcapng"
     else:
         return packets
 
@@ -157,9 +166,16 @@ def _parse_pcap_bytes(data: bytes):
         offset += incl_len
         pkt_num += 1
 
+        # Безпечне отримання дати/часу з обробкою OverflowError/ValueError
+        try:
+            ts_val = ts_sec + ts_usec / (1e9 if is_nanosecond else 1e6)
+            timestamp = datetime.utcfromtimestamp(ts_val).isoformat()
+        except (ValueError, OverflowError):
+            timestamp = datetime.utcnow().isoformat()
+
         pkt_info = {
             "num": pkt_num,
-            "timestamp": datetime.utcfromtimestamp(ts_sec + ts_usec / 1e6).isoformat(),
+            "timestamp": timestamp,
             "length": orig_len,
             "protocol": "Unknown",
             "src": "",
@@ -167,19 +183,29 @@ def _parse_pcap_bytes(data: bytes):
             "info": "",
         }
 
-        # Ethernet header
-        if len(pkt_data) >= 14 and network == 1:
+        # Визначаємо тип заголовку лінку
+        if network == 1 and len(pkt_data) >= 14:  # Ethernet
             eth_type = struct.unpack("!H", pkt_data[12:14])[0]
+            ip_start = 14
+        elif network == 113 and len(pkt_data) >= 16:  # Linux Cooked Capture (SLL)
+            eth_type = struct.unpack("!H", pkt_data[14:16])[0]
+            ip_start = 16
+        elif network == 101:  # Raw IP (starts directly with IP header)
+            eth_type = 0x0800
+            ip_start = 0
+        else:
+            eth_type = None
+            ip_start = None
 
-            if eth_type == 0x0800 and len(pkt_data) >= 34:  # IPv4
-                ihl = (pkt_data[14] & 0x0F) * 4
-                proto = pkt_data[23]
-                src_ip = ".".join(str(b) for b in pkt_data[26:30])
-                dst_ip = ".".join(str(b) for b in pkt_data[30:34])
+        if eth_type is not None:
+            if eth_type == 0x0800 and len(pkt_data) >= ip_start + 20:  # IPv4
+                ihl = (pkt_data[ip_start] & 0x0F) * 4
+                proto = pkt_data[ip_start + 9]
+                src_ip = ".".join(str(b) for b in pkt_data[ip_start + 12 : ip_start + 16])
+                dst_ip = ".".join(str(b) for b in pkt_data[ip_start + 16 : ip_start + 20])
                 pkt_info["src"] = src_ip
                 pkt_info["dst"] = dst_ip
 
-                ip_start = 14
                 if proto == 6 and len(pkt_data) >= ip_start + ihl + 4:  # TCP
                     src_port, dst_port = struct.unpack(
                         "!HH", pkt_data[ip_start + ihl : ip_start + ihl + 4]
@@ -474,10 +500,19 @@ def api_analyze_pcap():
     if len(file_data) > MAX_PCAP_SIZE:
         return jsonify({"error": f"File too large (max {MAX_PCAP_SIZE // 1024 // 1024} MB)"}), 400
 
-    # Парсинг PCAP
-    packets = _parse_pcap_bytes(file_data)
+    # Парсинг PCAP з обробкою винятків
+    try:
+        packets = _parse_pcap_bytes(file_data)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"PCAP parsing exception: {str(e)}"}), 500
+
+    if packets == "pcapng":
+        return jsonify({"error": "PCAPNG format is not supported. Please convert your file to standard PCAP (e.g. using Wireshark or 'editcap -F pcap input.pcapng output.pcap') before uploading."}), 400
+
     if not packets:
-        return jsonify({"error": "Failed to parse PCAP file or file is empty"}), 400
+        return jsonify({"error": "Failed to parse PCAP file. Please ensure it is a valid, non-empty standard PCAP file."}), 400
 
     # Статистика
     protocols = {}

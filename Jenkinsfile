@@ -53,7 +53,7 @@ pipeline {
             steps {
                 script {
                     sleep 25
-                    def containers = ['nginx-proxy', 'mysql-db', 'prometheus', 'telegram-bot', 'mysql-exporter', 'ai-adapter']
+                    def containers = ['nginx-proxy', 'mysql-db', 'prometheus', 'telegram-bot', 'mysql-exporter', 'ai-adapter', 'web-app']
                     for (c in containers) {
                         sh "docker ps -f name=^/${c}\$ -f status=running --quiet | grep . || (echo '❌ ${c} is DOWN' && exit 1)"
                     }

@@ -69,9 +69,9 @@ async def analyze_with_llm(container_name: str, logs_text: str):
     if not OLLAMA_URL or not logs_text or "No logs found" in logs_text:
         return None
     clean_logs = logs_text.replace("<code>", "").replace("</code>", "")
-    prompt = f"""Analyze the following container logs and identify the root cause of the alert/failure.
+    prompt = f"""Analyze the following network logs and traffic records to identify any network security threats, malicious payloads, anomalous traffic patterns, or service failures.
 Container: {container_name}
-Logs:
+Logs/Traffic:
 {clean_logs}
 
 Return a JSON object with the following fields:
@@ -86,8 +86,8 @@ Return a JSON object with the following fields:
   8. "High Error Rate"
   9. "Service Timeout"
   10. "Resource Exhaustion"
-- extended_summary: a concise but detailed explanation of what happened based on the logs
-- recommendations: what should be done to fix this issue
+- extended_summary: a concise but detailed explanation of what happened based on the logs/traffic analysis
+- recommendations: what network/security actions should be taken to mitigate this issue
 """
     payload = {
         "model": LLM_MODEL,
@@ -109,7 +109,7 @@ async def heartbeat_loop():
     while True:
         await asyncio.sleep(7200)
         now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-        await send_to_telegram(f"🛡 <b>Heartbeat [{now}]</b>\nВсі системи працюють у штатному режимі.")
+        await send_to_telegram(f"🛡 <b>NetVigil Heartbeat [{now}]</b>\nВсі системи мережевого аналізу працюють у штатному режимі.")
 
 @app.on_event("startup")
 async def startup_event():
@@ -143,11 +143,12 @@ async def handle_alert(request: Request):
                     recommendations = safe_escape(annotations.get('recommendations', 'No recommendations provided'))
                     
                     message = (
-                        f"🚨 <b>[SecOps AI] {problem_type}</b>\n"
-                        f"📦 <b>Container:</b> <code>{container}</code>\n"
+                        f"🚨 <b>[NetVigil AI — Network Threat Alert]</b>\n"
+                        f"🛡️ <b>Threat Type:</b> <code>{problem_type}</code>\n"
+                        f"📦 <b>Target Container:</b> <code>{container}</code>\n"
                         f"⚠️ <b>Severity:</b> {severity} (Risk: {risk_score}/10)\n\n"
-                        f"📖 <b>Extended Summary:</b>\n{description}\n\n"
-                        f"💡 <b>Mitigation Steps:</b>\n{recommendations}"
+                        f"📖 <b>Threat Analysis:</b>\n{description}\n\n"
+                        f"💡 <b>Recommended Actions:</b>\n{recommendations}"
                     )
                 else:
                     ai_analysis = await analyze_with_llm(container, logs)
@@ -157,25 +158,27 @@ async def handle_alert(request: Request):
                         recommendations = safe_escape(ai_analysis.get('recommendations', 'No recommendations provided'))
                         
                         message = (
-                            f"🚨 <b>ALERT FIRING: {alert_name} ({problem_type})</b>\n"
-                            f"📦 <b>Container:</b> <code>{container}</code>\n"
+                            f"🚨 <b>[NetVigil AI — Network Incident Detected]</b>\n"
+                            f"🛡️ <b>Incident Type:</b> <code>{problem_type}</code>\n"
+                            f"📦 <b>Target Container:</b> <code>{container}</code>\n"
                             f"⚠️ <b>Severity:</b> {severity}\n\n"
-                            f"📖 <b>Extended Summary:</b>\n{extended_summary}\n\n"
-                            f"💡 <b>Mitigation Steps:</b>\n{recommendations}\n\n"
-                            f"📄 <b>Last Logs:</b>\n{logs}"
+                            f"📖 <b>Traffic Analysis:</b>\n{extended_summary}\n\n"
+                            f"💡 <b>Recommended Actions:</b>\n{recommendations}\n\n"
+                            f"📄 <b>Observed Traffic Logs:</b>\n{logs}"
                         )
                     else:
                         summary = safe_escape(annotations.get('summary', 'No summary'))
                         message = (
-                            f"🚨 <b>ALERT FIRING: {alert_name}</b>\n"
-                            f"📦 <b>Container:</b> <code>{container}</code>\n"
+                            f"🚨 <b>[NetVigil — Unanalyzed Alert]</b>\n"
+                            f"🔔 <b>Alert Name:</b> {alert_name}\n"
+                            f"📦 <b>Target Container:</b> <code>{container}</code>\n"
                             f"⚠️ <b>Severity:</b> {severity}\n"
                             f"📝 <b>Summary:</b> {summary}\n\n"
-                            f"📄 <b>Last Logs:</b>\n{logs}"
+                            f"📄 <b>Observed Traffic Logs:</b>\n{logs}"
                         )
             else:
                 active_alerts.discard(alert_name)
-                message = f"✅ <b>RESOLVED: {alert_name}</b>\n📦 <b>Container:</b> <code>{container}</code>\n🟢 Система стабілізована."
+                message = f"✅ <b>[NetVigil — RESOLVED]</b>\n🔔 <b>Alert Name:</b> {alert_name}\n📦 <b>Container:</b> <code>{container}</code>\n🟢 Мережевий трафік стабілізовано."
                 
             await send_to_telegram(message)
         return {"status": "success"}

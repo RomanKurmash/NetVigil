@@ -159,6 +159,29 @@ services:
       - ollama
       - alertmanager
 
+  web-app:
+    build:
+      context: ./web-app
+    container_name: web-app
+    ports:
+      - "5000:5000"
+    environment:
+      - LOKI_URL=http://loki:3100
+      - OLLAMA_URL=http://ollama:11434
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ALERTMANAGER_URL=http://alertmanager:9093
+      - LLM_MODEL=llama3
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    networks:
+      - monitor-net
+      - apps-net
+    depends_on:
+      - ollama
+      - alertmanager
+    restart: unless-stopped
+
 volumes:
   prometheus_data:
   grafana_data:

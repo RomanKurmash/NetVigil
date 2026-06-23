@@ -35,11 +35,13 @@
         if (pageEl) pageEl.classList.add('active');
         if (navEl) navEl.classList.add('active');
 
-        const titles = { dashboard: 'Dashboard', logs: 'Log Viewer', traffic: 'Traffic Analysis', alerts: 'Alerts', chat: 'AI Chat' };
+        const titles = { dashboard: 'Dashboard', logs: 'Log Viewer', traffic: 'Traffic Analysis', alerts: 'Alerts', 'telegram-history': 'Telegram History', chat: 'AI Chat' };
         $('#page-title').textContent = titles[page] || 'Dashboard';
 
         if (page === 'dashboard') loadDashboard();
         if (page === 'alerts') loadAlerts();
+        if (page === 'telegram-history') loadTelegramHistory();
+
     }
 
     $$('.nav-item').forEach(item => {
@@ -68,6 +70,7 @@
     $('#btn-refresh').addEventListener('click', () => {
         if (currentPage === 'dashboard') loadDashboard();
         else if (currentPage === 'alerts') loadAlerts();
+        else if (currentPage === 'telegram-history') loadTelegramHistory();
     });
 
     // ---- API Helpers ----
@@ -441,6 +444,234 @@
             `;
         }).join('');
     }
+
+    // ---- Telegram History ----
+    $('#btn-refresh-telegram-history').addEventListener('click', loadTelegramHistory);
+
+    async function loadTelegramHistory() {
+        const tbody = $('#telegram-history-tbody');
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+
+        const data = await api('/api/telegram/history');
+        if (!data) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load registry</td></tr>';
+            return;
+        }
+
+        if (data.error) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color:var(--accent-red)">Error: ${escapeHtml(data.error)}</td></tr>`;
+            return;
+        }
+
+        const history = data.history || [];
+        if (history.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">✅ No incidents recorded in registry yet</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = history.map((item) => {
+            const riskClass = (item.severity === 'critical' || parseInt(item.risk_score) >= 7) ? 'error' : (parseInt(item.risk_score) >= 4) ? 'warning' : 'info';
+            const riskText = item.risk_score && item.risk_score !== '0' ? `Risk: ${item.risk_score}/10` : item.severity;
+            const statusClass = item.status === 'resolved' ? 'resolved' : 'firing';
+            const statusText = item.status === 'resolved' ? 'Resolved' : 'Firing';
+
+            return `
+                <tr class="history-main-row" data-id="${item.id}">
+                    <td>${item.start_time}</td>
+                    <td><span class="${item.end_time === 'Active' ? 'status-badge firing' : ''}">${item.end_time}</span></td>
+                    <td><code>${escapeHtml(item.container)}</code></td>
+                    <td><strong>${escapeHtml(item.problem_type || item.alert_name)}</strong></td>
+                    <td><span class="log-level ${riskClass}">${riskText}</span></td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                    <td>
+                        <button class="detail-toggle-btn" onclick="window.toggleTelegramDetail('${item.id}')">
+                            Details
+                        </button>
+                    </td>
+                </tr>
+                <tr class="detail-row" id="telegram-detail-${item.id}" style="display:none">
+                    <td colspan="7">
+                        <div class="event-detail-container">
+                            <!-- Left Column: Timeline & Logs -->
+                            <div class="event-detail-col">
+                                <div class="event-detail-card">
+                                    <h4>Incident Timeline & Messages</h4>
+                                    <div class="event-timeline">
+                                        ${(item.messages || []).map(msg => `
+                                            <div class="event-timeline-item ${msg.status === 'resolved' ? 'resolved' : ''}">
+                                                <div class="event-timeline-meta">${msg.timestamp} [${msg.status.toUpperCase()}]</div>
+                                                <div style="font-size:0.8rem; background:rgba(0,0,0,0.15); padding:8px; border-radius:4px; margin-top:4px">
+                                                    ${msg.message}
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                ${item.logs ? `
+                                    <div class="event-detail-card">
+                                        <h4>Triggering Container Logs</h4>
+                                        <pre style="max-height:180px; overflow-y:auto; font-family:'JetBrains Mono',monospace; font-size:0.75rem; background:rgba(0,0,0,0.2); padding:10px; border-radius:4px; border:1px solid var(--border); white-space:pre-wrap; word-break:break-all">${item.logs}</pre>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <!-- Right Column: AI Retrospective & Correlation -->
+                            <div class="event-detail-col">
+                                <div class="event-detail-card" id="retro-card-${item.id}">
+                                    <h4>
+                                        <span>AI Retrospective</span>
+                                        ${!item.retrospective ? `<button class="btn btn-xs btn-primary" onclick="window.conductRetrospective('${item.id}')">Run AI Analysis</button>` : ''}
+                                    </h4>
+                                    <div id="retro-content-${item.id}">
+                                        ${item.retrospective ? formatRetrospectiveHtml(item.retrospective) : '<div class="empty-state">No retrospective conducted yet.</div>'}
+                                    </div>
+                                </div>
+
+                                <div class="event-detail-card" id="correlation-card-${item.id}">
+                                    <h4>
+                                        <span>Log Correlation</span>
+                                        ${!item.correlated_events ? `<button class="btn btn-xs btn-primary" onclick="window.runCorrelation('${item.id}')">Correlate</button>` : ''}
+                                    </h4>
+                                    <div id="correlation-content-${item.id}">
+                                        ${item.correlated_events ? formatCorrelationHtml(item.correlated_events) : '<div class="empty-state">Run correlation to scan Loki for simultaneous logs across services.</div>'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function formatRetrospectiveHtml(retro) {
+        if (!retro) return '';
+        
+        const timelineLi = (retro.timeline || []).map(step => {
+            if (typeof step === 'object') {
+                const time = step.time || step.timestamp || '';
+                const desc = step.step || step.event || step.description || '';
+                return `<li>${time ? `<code>${escapeHtml(time)}</code>: ` : ''}${escapeHtml(desc)}</li>`;
+            }
+            return `<li>${escapeHtml(step)}</li>`;
+        }).join('');
+        
+        const actionsLi = (retro.preventative_actions || []).map(action => `<li>${escapeHtml(action)}</li>`).join('');
+        
+        let impactText = '';
+        if (typeof retro.impact_assessment === 'object') {
+            impactText = Object.entries(retro.impact_assessment)
+                .map(([k, v]) => `<strong>${escapeHtml(k)}</strong>: ${escapeHtml(v)}`)
+                .join(' | ');
+        } else {
+            impactText = escapeHtml(retro.impact_assessment || 'N/A');
+        }
+        
+        return `
+            <div class="retro-section">
+                <div class="retro-title">Root Cause Analysis (Першопричина)</div>
+                <div class="retro-content">${escapeHtml(retro.root_cause || 'N/A')}</div>
+            </div>
+            <div class="retro-section">
+                <div class="retro-title">Timeline & Investigation (Хронологія)</div>
+                <ul style="padding-left:16px; margin:4px 0">${timelineLi}</ul>
+            </div>
+            <div class="retro-section">
+                <div class="retro-title">Impact Assessment (Оцінка наслідків)</div>
+                <div class="retro-content">${impactText}</div>
+            </div>
+            <div class="retro-section">
+                <div class="retro-title">Preventative Actions (Рекомендовані заходи)</div>
+                <ul style="padding-left:16px; margin:4px 0">${actionsLi}</ul>
+            </div>
+            <div class="retro-section" style="margin-bottom:0">
+                <div class="retro-title">Correlation Summary (Зв'язок із паттернами загроз)</div>
+                <div class="retro-content">${escapeHtml(retro.correlation_summary || 'N/A')}</div>
+            </div>
+        `;
+    }
+
+    function formatCorrelationHtml(corr) {
+        if (!corr) return '';
+        const events = corr.events || [];
+        const logs = corr.logs || [];
+        
+        let html = '';
+        
+        if (events.length > 0) {
+            html += '<div class="retro-title">Simultaneous Alerts (±10 хв)</div>';
+            html += '<div class="correlation-list" style="margin-bottom:12px">';
+            html += events.map(ev => `
+                <div class="correlation-item">
+                    🚨 <strong>${escapeHtml(ev.alert_name)}</strong> on <code>${escapeHtml(ev.container)}</code> (${ev.start_time}) - diff: ${ev.time_diff_seconds}s
+                </div>
+            `).join('');
+            html += '</div>';
+        } else {
+            html += '<div class="retro-title">Simultaneous Alerts</div>';
+            html += '<div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:12px">No concurrent alerts detected in registry.</div>';
+        }
+        
+        if (logs.length > 0) {
+            html += '<div class="retro-title">Correlated Error Logs in Loki (±5 хв)</div>';
+            html += '<div class="correlation-list" style="max-height:200px; overflow-y:auto">';
+            html += logs.map(log => `
+                <div class="correlation-item log-item">
+                    📁 <code>${escapeHtml(log.container)}</code> [${log.timestamp}]: <span style="font-family:monospace">${escapeHtml(log.message)}</span>
+                </div>
+            `).join('');
+            html += '</div>';
+        } else {
+            html += '<div class="retro-title">Correlated Error Logs in Loki</div>';
+            html += '<div style="font-size:0.8rem; color:var(--text-secondary)">No error/warning logs found on other containers during this timeframe.</div>';
+        }
+        
+        return html;
+    }
+
+    window.conductRetrospective = async function(eventId) {
+        const btn = document.querySelector(`#retro-card-${eventId} button`);
+        if (btn) btn.disabled = true;
+        const container = document.getElementById(`retro-content-${eventId}`);
+        if (container) container.innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto"></div> Conducting AI Retrospective via Ollama (Llama-3)...</div>';
+        
+        const data = await api(`/api/telegram/history/${eventId}/retrospective`, { method: 'POST' });
+        if (data && data.status === 'success' && data.retrospective) {
+            if (container) container.innerHTML = formatRetrospectiveHtml(data.retrospective);
+            if (btn) btn.remove();
+        } else {
+            if (container) container.innerHTML = '<div class="empty-state" style="color:var(--accent-red)">Failed to generate retrospective. Make sure Ollama is running and healthy.</div>';
+            if (btn) btn.disabled = false;
+        }
+    };
+
+    window.runCorrelation = async function(eventId) {
+        const btn = document.querySelector(`#correlation-card-${eventId} button`);
+        if (btn) btn.disabled = true;
+        const container = document.getElementById(`correlation-content-${eventId}`);
+        if (container) container.innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto"></div> Running Loki correlation scan...</div>';
+        
+        const data = await api(`/api/telegram/history/${eventId}/correlate`, { method: 'POST' });
+        if (data && data.status === 'success' && data.correlated_events) {
+            if (container) container.innerHTML = formatCorrelationHtml(data.correlated_events);
+            if (btn) btn.remove();
+        } else {
+            if (container) container.innerHTML = '<div class="empty-state" style="color:var(--accent-red)">Failed to scan Loki logs.</div>';
+            if (btn) btn.disabled = false;
+        }
+    };
+
+    // Expose toggle function globally so inline onclick works
+    window.toggleTelegramDetail = function(id) {
+        const detailRow = document.getElementById(`telegram-detail-${id}`);
+        if (detailRow) {
+            if (detailRow.style.display === 'none') {
+                detailRow.style.display = 'table-row';
+            } else {
+                detailRow.style.display = 'none';
+            }
+        }
+    };
 
     // ---- AI Chat ----
     const chatInput = $('#chat-input');

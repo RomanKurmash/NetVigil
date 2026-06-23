@@ -4,9 +4,11 @@ import httpx
 import logging
 import html
 import json
-from datetime import datetime
+import hashlib
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 from dotenv import load_dotenv
+
 
 load_dotenv()
 
@@ -27,6 +29,88 @@ else:
     logger.info(f"Telegram Bot initialized. Chat ID: {CHAT_ID}")
 
 active_alerts = set()
+HISTORY_FILE = "notifications_history.json"
+notifications_history = []
+
+def load_history():
+    global notifications_history
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                notifications_history = json.load(f)
+                logger.info(f"Loaded {len(notifications_history)} entries from history.")
+        except Exception as e:
+            logger.error(f"Error loading history file: {e}")
+            notifications_history = []
+    else:
+        notifications_history = []
+
+def save_history():
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(notifications_history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving history file: {e}")
+
+def format_iso_timestamp(ts_str):
+    if not ts_str or ts_str.startswith("0001-"):
+        return None
+    try:
+        # e.g., 2026-06-23T09:45:00.123Z or 2026-06-23T09:45:00Z
+        clean_ts = ts_str.replace("Z", "+00:00")
+        if "." in clean_ts:
+            parts = clean_ts.split(".")
+            subparts = parts[1].split("+")
+            usec = subparts[0][:6]
+            clean_ts = parts[0] + "." + usec + "+" + subparts[1]
+        dt = datetime.fromisoformat(clean_ts)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return ts_str
+
+async def query_loki_timeframe(start_time_str, duration_seconds=600):
+    if not LOKI_URL:
+        return []
+    try:
+        dt = datetime.strptime(start_time_str, "%Y-%m-%d %H:%M:%S")
+        start_dt = dt - timedelta(seconds=duration_seconds // 2)
+        end_dt = dt + timedelta(seconds=duration_seconds // 2)
+        
+        # Loki epoch nanoseconds
+        start_ns = str(int(start_dt.timestamp() * 1e9))
+        end_ns = str(int(end_dt.timestamp() * 1e9))
+        
+        query = '{container=~"wordpress-app|nginx-proxy|mysql-db|ai-adapter|telegram-bot"} |~ "(?i)error|fail|exception|critical|fatal|attack|warn"'
+        
+        async with httpx.AsyncClient() as client:
+            params = {"query": query, "limit": 20, "start": start_ns, "end": end_ns, "direction": "forward"}
+            resp = await client.get(LOKI_URL, params=params, timeout=5.0)
+            if resp.status_code != 200:
+                logger.error(f"Loki timeframe query returned HTTP {resp.status_code}")
+                return []
+            
+            results = resp.json().get("data", {}).get("result", [])
+            correlated_logs = []
+            for res in results:
+                container = res.get("stream", {}).get("container", "unknown")
+                for val in res.get("values", []):
+                    ts_ns = int(val[0])
+                    log_dt = datetime.utcfromtimestamp(ts_ns / 1e9)
+                    message = val[1]
+                    correlated_logs.append({
+                        "timestamp": log_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                        "container": container,
+                        "message": message[:150].strip()
+                    })
+            correlated_logs.sort(key=lambda x: x["timestamp"])
+            return correlated_logs
+    except Exception as e:
+        logger.error(f"Loki timeframe query error: {e}")
+        return []
+
+load_history()
+
+
 
 def safe_escape(value):
     if isinstance(value, list):
@@ -86,6 +170,7 @@ Return a JSON object with the following fields:
   8. "High Error Rate"
   9. "Service Timeout"
   10. "Resource Exhaustion"
+  11. "DDoS Attack"
 - extended_summary: a concise but detailed explanation of what happened based on the logs/traffic analysis
 - recommendations: what network/security actions should be taken to mitigate this issue
 """
@@ -97,7 +182,7 @@ Return a JSON object with the following fields:
     }
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=60.0)
+            response = await client.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=90.0)
             if response.status_code == 200:
                 result = json.loads(response.json().get("response", "{}"))
                 return result
@@ -115,8 +200,146 @@ async def heartbeat_loop():
 async def startup_event():
     asyncio.create_task(heartbeat_loop())
 
+@app.get("/history")
+async def get_history():
+    return {"history": notifications_history}
+
+@app.post("/history/{event_id}/retrospective")
+async def generate_retrospective(event_id: str):
+    global notifications_history
+    target_event = None
+    for ev in notifications_history:
+        if ev.get("id") == event_id:
+            target_event = ev
+            break
+            
+    if not target_event:
+        return {"error": "Event not found"}, 404
+        
+    if target_event.get("retrospective"):
+        return {"status": "success", "retrospective": target_event["retrospective"]}
+        
+    try:
+        prompt = f"""You are a senior SecOps analyst conducting an incident retrospective (post-mortem).
+Analyze the following security incident event:
+
+Incident: {target_event['alert_name']} (Type: {target_event['problem_type']})
+Target Container: {target_event['container']}
+Severity: {target_event['severity']} (Risk Score: {target_event['risk_score']}/10)
+Timeline: Started at {target_event['start_time']}, Ended at {target_event['end_time']}
+
+Triggering Logs:
+{target_event['logs']}
+
+Write a professional cybersecurity retrospective report in JSON format with these exact keys:
+- root_cause: analysis of why the alert triggered and the probable attack vector/system issue.
+- timeline: list of key steps (e.g. Alert fired, logs analyzed, resolution detected).
+- impact_assessment: what was affected (confidentiality, integrity, availability).
+- preventative_actions: bullet points of specific architectural, network, or policy changes to prevent recurrence.
+- correlation_summary: how this event relates to typical threat patterns.
+
+Your response MUST be valid JSON only. Answer in Ukrainian language. Do not output markdown code blocks wrapper, just output the raw JSON text.
+"""
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={
+                    "model": LLM_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.2}
+                },
+                timeout=90.0
+            )
+            if resp.status_code == 200:
+                response_text = resp.json().get("response", "").strip()
+                if response_text.startswith("```json"):
+                    response_text = response_text.split("```json")[1]
+                if response_text.endswith("```"):
+                    response_text = response_text.rsplit("```", 1)[0]
+                response_text = response_text.strip()
+                
+                try:
+                    report = json.loads(response_text)
+                    target_event["retrospective"] = report
+                    save_history()
+                    return {"status": "success", "retrospective": report}
+                except Exception as parse_err:
+                    logger.error(f"Failed to parse LLM JSON retrospective: {parse_err}. Response was: {response_text}")
+                    report = {
+                        "root_cause": "Не вдалося розпарсити автоматичний звіт. Див. сирий опис.",
+                        "timeline": ["Початок: " + target_event['start_time'], "Кінець: " + target_event['end_time']],
+                        "impact_assessment": "Рівень загрози: " + target_event['severity'],
+                        "preventative_actions": ["Перевірте логи контейнера вручну."],
+                        "correlation_summary": "Спроба аналізу завершилась помилкою."
+                    }
+                    target_event["retrospective"] = report
+                    save_history()
+                    return {"status": "success", "retrospective": report}
+            else:
+                return {"error": f"Ollama returned HTTP {resp.status_code}"}, 502
+    except Exception as e:
+        logger.error(f"Retrospective generation error: {e}")
+        return {"error": str(e)}, 500
+
+@app.post("/history/{event_id}/correlate")
+async def run_correlation(event_id: str):
+    global notifications_history
+    target_event = None
+    for ev in notifications_history:
+        if ev.get("id") == event_id:
+            target_event = ev
+            break
+            
+    if not target_event:
+        return {"error": "Event not found"}, 404
+        
+    correlated_events = []
+    target_dt = None
+    try:
+        target_dt = datetime.strptime(target_event["start_time"], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        pass
+        
+    if target_dt:
+        for ev in notifications_history:
+            if ev.get("id") == target_event["id"]:
+                continue
+            try:
+                ev_dt = datetime.strptime(ev["start_time"], "%Y-%m-%d %H:%M:%S")
+                diff = abs((target_dt - ev_dt).total_seconds())
+                if diff <= 600:
+                    correlated_events.append({
+                        "id": ev["id"],
+                        "alert_name": ev["alert_name"],
+                        "container": ev["container"],
+                        "start_time": ev["start_time"],
+                        "status": ev["status"],
+                        "time_diff_seconds": int(diff)
+                    })
+            except Exception:
+                pass
+                
+    correlated_logs = []
+    if target_dt:
+        correlated_logs = await query_loki_timeframe(target_event["start_time"])
+        
+    target_event["correlated_events"] = {
+        "events": correlated_events,
+        "logs": correlated_logs
+    }
+    save_history()
+    
+    return {
+        "status": "success",
+        "correlated_events": target_event["correlated_events"]
+    }
+
+
+
 @app.post("/alert")
 async def handle_alert(request: Request):
+    global notifications_history
     try:
         data = await request.json()
         alerts = data if isinstance(data, list) else data.get('alerts', [])
@@ -133,14 +356,34 @@ async def handle_alert(request: Request):
             severity = safe_escape(labels.get('severity', 'warning'))
             risk_score = safe_escape(labels.get('risk_score', '0'))
             
+            starts_at_raw = alert.get('startsAt')
+            ends_at_raw = alert.get('endsAt')
+            
+            start_time = format_iso_timestamp(starts_at_raw) or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            end_time = format_iso_timestamp(ends_at_raw)
+            if not end_time and status == 'resolved':
+                end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            elif not end_time:
+                end_time = "Active"
+            
+            problem_type_val = "System Alert"
+            summary_val = ""
+            recommendations_val = ""
+            logs_val = ""
+            
             if status == 'firing':
                 active_alerts.add(alert_name)
                 logs = await get_loki_logs(container)
+                logs_val = logs
                 
                 if alert_name == "SecOpsAIAnomalyDetected":
                     problem_type = safe_escape(labels.get('problem_type', 'AI Anomaly Detected'))
                     description = safe_escape(annotations.get('description', 'No description provided'))
                     recommendations = safe_escape(annotations.get('recommendations', 'No recommendations provided'))
+                    
+                    problem_type_val = problem_type
+                    summary_val = description
+                    recommendations_val = recommendations
                     
                     message = (
                         f"🚨 <b>[NetVigil AI — Network Threat Alert]</b>\n"
@@ -157,6 +400,10 @@ async def handle_alert(request: Request):
                         extended_summary = safe_escape(ai_analysis.get('extended_summary', 'No summary provided'))
                         recommendations = safe_escape(ai_analysis.get('recommendations', 'No recommendations provided'))
                         
+                        problem_type_val = problem_type
+                        summary_val = extended_summary
+                        recommendations_val = recommendations
+                        
                         message = (
                             f"🚨 <b>[NetVigil AI — Network Incident Detected]</b>\n"
                             f"🛡️ <b>Incident Type:</b> <code>{problem_type}</code>\n"
@@ -168,6 +415,11 @@ async def handle_alert(request: Request):
                         )
                     else:
                         summary = safe_escape(annotations.get('summary', 'No summary'))
+                        
+                        problem_type_val = alert_name
+                        summary_val = summary
+                        recommendations_val = "N/A"
+                        
                         message = (
                             f"🚨 <b>[NetVigil — Unanalyzed Alert]</b>\n"
                             f"🔔 <b>Alert Name:</b> {alert_name}\n"
@@ -178,9 +430,70 @@ async def handle_alert(request: Request):
                         )
             else:
                 active_alerts.discard(alert_name)
+                problem_type_val = "Alert Resolved"
+                summary_val = f"Мережевий трафік стабілізовано. Алерт {alert_name} деактивовано."
+                recommendations_val = "No action required."
+                logs_val = ""
                 message = f"✅ <b>[NetVigil — RESOLVED]</b>\n🔔 <b>Alert Name:</b> {alert_name}\n📦 <b>Container:</b> <code>{container}</code>\n🟢 Мережевий трафік стабілізовано."
                 
             await send_to_telegram(message)
+            
+            # Find and update existing active event or create a new one
+            existing_event = None
+            for ev in notifications_history:
+                if ev.get("alert_name") == alert_name and ev.get("container") == container and ev.get("status") == "firing":
+                    existing_event = ev
+                    break
+            
+            if existing_event:
+                if status == 'resolved':
+                    existing_event["status"] = "resolved"
+                    existing_event["end_time"] = end_time
+                    existing_event["messages"].append({
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "status": "resolved",
+                        "message": message
+                    })
+                else:
+                    # Update active event logs or details if needed
+                    existing_event["logs"] = logs_val
+                    existing_event["risk_score"] = risk_score
+                    existing_event["severity"] = severity
+                    existing_event["problem_type"] = problem_type_val
+                    existing_event["summary"] = summary_val
+                    existing_event["recommendations"] = recommendations_val
+            else:
+                event_id = hashlib.md5(f"{alert_name}_{container}_{start_time}".encode()).hexdigest()
+                new_event = {
+                    "id": event_id,
+                    "timestamp": start_time,
+                    "alert_name": alert_name,
+                    "container": container,
+                    "severity": severity,
+                    "risk_score": risk_score,
+                    "status": status,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "problem_type": problem_type_val,
+                    "summary": summary_val,
+                    "recommendations": recommendations_val,
+                    "logs": logs_val,
+                    "messages": [
+                        {
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "status": status,
+                            "message": message
+                        }
+                    ],
+                    "retrospective": None,
+                    "correlated_events": None
+                }
+                notifications_history.insert(0, new_event)
+                
+            if len(notifications_history) > 200:
+                notifications_history = notifications_history[:200]
+            save_history()
+
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Webhook error: {e}")

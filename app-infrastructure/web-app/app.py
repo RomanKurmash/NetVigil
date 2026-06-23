@@ -595,6 +595,41 @@ def api_alerts():
     return jsonify({"alerts": formatted, "total": len(formatted)})
 
 
+@app.route("/api/telegram/history")
+def api_telegram_history():
+    """Отримує історію сповіщень з telegram-bot."""
+    try:
+        resp = httpx.get("http://telegram-bot:8080/history", timeout=5.0)
+        if resp.status_code == 200:
+            return jsonify(resp.json())
+        return jsonify({"history": [], "error": f"Bot API returned HTTP {resp.status_code}"}), resp.status_code
+    except Exception as e:
+        print(f"[Telegram Proxy] Error: {e}")
+        return jsonify({"history": [], "error": f"Failed to connect to Telegram bot: {str(e)}"}), 503
+
+
+@app.route("/api/telegram/history/<event_id>/retrospective", methods=["POST"])
+def api_telegram_retrospective(event_id):
+    """Проксує запит на генерацію ретроспективи інциденту."""
+    try:
+        resp = httpx.post(f"http://telegram-bot:8080/history/{event_id}/retrospective", timeout=100.0)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        print(f"[Telegram Proxy Retrospective] Error: {e}")
+        return jsonify({"error": f"Failed to connect to Telegram bot: {str(e)}"}), 503
+
+
+@app.route("/api/telegram/history/<event_id>/correlate", methods=["POST"])
+def api_telegram_correlate(event_id):
+    """Проксує запит на запуск аналізу кореляцій для інциденту."""
+    try:
+        resp = httpx.post(f"http://telegram-bot:8080/history/{event_id}/correlate", timeout=15.0)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        print(f"[Telegram Proxy Correlate] Error: {e}")
+        return jsonify({"error": f"Failed to connect to Telegram bot: {str(e)}"}), 503
+
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     """

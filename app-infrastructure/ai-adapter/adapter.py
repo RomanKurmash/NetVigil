@@ -51,7 +51,7 @@ Return a JSON object with the following fields:
 - risk_score: an integer between 0 and 10 (0 means perfectly safe, 10 means active critical security breach)
 - threat_found: boolean indicating if any security threat or anomaly was found
 - affected_container: the name of the container that is targeted or generating the logs (e.g., wordpress-app, nginx-proxy)
-- problem_type: choose the most appropriate category from the following 10 types:
+- problem_type: choose the most appropriate category from the following 11 types:
   1. "SQL Injection"
   2. "Remote Code Execution"
   3. "Brute-force Attack"
@@ -62,6 +62,7 @@ Return a JSON object with the following fields:
   8. "High Error Rate"
   9. "Service Timeout"
   10. "Resource Exhaustion"
+  11. "DDoS Attack"
 - description: a concise summary of what was found in the logs
 - recommendations: key steps to mitigate the issue
 

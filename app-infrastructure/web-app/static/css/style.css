@@ -455,6 +455,139 @@ body {
 .chat-input-area .btn { padding: 12px 16px; }
 
 /* ============================================================
+   TELEGRAM REGISTRY DETAIL ROW
+   ============================================================ */
+.event-detail-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 20px;
+    background: rgba(10, 14, 23, 0.95);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    margin: 10px 0;
+    color: var(--text-primary);
+}
+@media (max-width: 1024px) {
+    .event-detail-container {
+        grid-template-columns: 1fr;
+    }
+}
+.event-detail-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.event-detail-card {
+    background: rgba(17, 24, 39, 0.7);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+}
+.event-detail-card h4 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    color: var(--accent-cyan);
+    font-size: 0.95rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.event-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.event-timeline-item {
+    border-left: 2px solid var(--accent-blue);
+    padding-left: 12px;
+    position: relative;
+    font-size: 0.85rem;
+}
+.event-timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 2px solid var(--accent-blue);
+}
+.event-timeline-item.resolved {
+    border-left-color: var(--accent-green);
+}
+.event-timeline-item.resolved::before {
+    border-color: var(--accent-green);
+}
+.event-timeline-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.retro-section {
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+}
+.retro-title {
+    font-weight: bold;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.retro-content {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 8px;
+    border-radius: 4px;
+    border-left: 3px solid var(--accent-cyan);
+}
+.correlation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.82rem;
+}
+.correlation-item {
+    padding: 8px;
+    border-radius: 4px;
+    background: rgba(245, 158, 11, 0.05);
+    border-left: 3px solid var(--accent-orange);
+}
+.correlation-item.log-item {
+    background: rgba(59, 130, 246, 0.05);
+    border-left-color: var(--accent-blue);
+}
+.detail-toggle-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all var(--transition);
+}
+.detail-toggle-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+.detail-row td {
+    padding: 0 12px 12px 12px !important;
+}
+.detail-row {
+    background: rgba(17, 24, 39, 0.4);
+}
+.status-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+}
+.status-badge.firing { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); }
+.status-badge.resolved { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+
+
+/* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 1200px) {

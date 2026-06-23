@@ -44,6 +44,10 @@
                 <span>Alerts</span>
                 <span class="badge" id="alert-badge" style="display:none">0</span>
             </a>
+            <a href="#telegram-history" class="nav-item" data-page="telegram-history" id="nav-telegram-history">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                <span>Telegram History</span>
+            </a>
             <a href="#chat" class="nav-item" data-page="chat" id="nav-chat">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span>AI Chat</span>
@@ -325,6 +329,34 @@
                     <div id="alerts-list" class="alerts-list">
                         <div class="empty-state">Loading alerts...</div>
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== TELEGRAM NOTIFICATIONS PAGE ==================== -->
+        <section class="page" id="page-telegram-history">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Incident Event Registry (Telegram Alerting)</h3>
+                    <button class="btn btn-sm btn-secondary" id="btn-refresh-telegram-history">Refresh</button>
+                </div>
+                <div class="card-body log-table-wrapper">
+                    <table class="log-table" id="telegram-history-table">
+                        <thead>
+                            <tr>
+                                <th width="150">Start Time</th>
+                                <th width="150">End Time</th>
+                                <th width="110">Container</th>
+                                <th width="160">Threat / Incident Type</th>
+                                <th width="120">Severity & Risk</th>
+                                <th width="90">Status</th>
+                                <th width="120">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="telegram-history-tbody">
+                            <tr><td colspan="7" class="empty-state">Loading registry...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </section>
